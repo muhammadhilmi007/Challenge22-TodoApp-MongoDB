@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Todo App</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+
+<body>
+  <div class="container mt-5">
+    <div class="card">
+      <div class="card-header text-center">
+        <h1>MongoDB Breads(Browse, Read, Edit, Add, Delete, Sort)</h1>
+      </div>
+      <div class="card-body">
+        <div class="row mb-3">
+          <div class="col-md-2">
+            <div class="input-group">
+              <button class="btn btn-light" type="button" disabled>Show</button>
+              <select id="limitSelect" class="form-select form-select-sm">
+                <option value="5">5</option>
+                <option value="10">10</option>
+                <option value="all">All</option>
+              </select>
+              <button class="btn btn-light" type="button" disabled>Entries</button>
+            </div>
+          </div>
+          <div class="col-md-10">
+            <form id="searchForm">
+              <div class="input-group">
+                <input type="text" id="searchInput" class="form-control" placeholder="Search todos...">
+                <button class="btn btn-outline-secondary" type="submit"><i class="fas fa-search"></i></button>
+                <button class="btn btn-outline-warning" type="button" id="resetSearch"><i
+                    class="fas fa-sync"></i></button>
+              </div>
+            </form>
+          </div>
+        </div>
+        <table id="todoTable" class="table table-striped table-hover">
+          <thead>
+            <tr>
+              <th>No</th>
+              <th>Title</th>
+              <th>Phone</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="todoTableBody"></tbody>
+        </table>
+      </div>
+      <div class="card-footer d-flex justify-content-between align-items-center">
+        <button type="button" class="btn btn-primary" id="addTodoBtn">
+          <i class="fas fa-plus"></i>
+        </button>
+        <div class="d-flex justify-content-center align-items-center">
+          <div id="todoTableInfo" class="text-center me-3"></div>
+          <nav aria-label="Todo pagination">
+            <ul id="pagination" class="pagination mb-0"></ul>
+          </nav>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal for adding/editing todo -->
+  <div class="modal fade" id="todoModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="todoModalLabel">Add New Todo</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="todoForm">
+            <input type="hidden" id="todoId">
+            <div class="mb-3">
+              <label for="title" class="form-label">Title</label>
+              <input type="text" class="form-control" id="title" required>
+            </div>
+            <div class="mb-3">
+              <label for="phone" class="form-label">Phone</label>
+              <input type="tel" class="form-control" id="phone" required>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="button" class="btn btn-primary" id="saveTodo">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    const API_URL = 'http://localhost:3000/users';
+    let currentPage = 1;
+    let itemsPerPage = 5;
+    let todos = [];
+    let filteredTodos = [];
+
+    document.addEventListener('DOMContentLoaded', function () {
+      fetchTodos();
+
+      document.getElementById('addTodoBtn').addEventListener('click', () => openModal());
+      document.getElementById('saveTodo').addEventListener('click', saveTodo);
+      document.getElementById('todoTableBody').addEventListener('click', handleTableClick);
+      document.getElementById('searchForm').addEventListener('submit', handleSearch);
+      document.getElementById('resetSearch').addEventListener('click', resetSearch);
+      document.getElementById('limitSelect').addEventListener('change', handleLimitChange);
+    });
+
+    async function fetchTodos() {
+      try {
+        const response = await fetch(API_URL);
+        if (!response.ok) throw new Error('Failed to fetch todos');
+        todos = await response.json();
+        filteredTodos = [...todos];
+        renderTodos();
+      } catch (error) {
+        console.error('Error fetching todos:', error);
+        alert('Failed to load todos. Please try again.');
+      }
+    }
+
+    function renderTodos() {
+      const startIndex = (currentPage - 1) * (itemsPerPage === 'all' ? filteredTodos.length : parseInt(itemsPerPage));
+      const endIndex = itemsPerPage === 'all' ? filteredTodos.length : startIndex + parseInt(itemsPerPage);
+      const currentTodos = filteredTodos.slice(startIndex, endIndex);
+
+      const tbody = document.getElementById('todoTableBody');
+      tbody.innerHTML = currentTodos.map((todo, index) => `
+        <tr>
+          <td>${startIndex + index + 1}</td>
+          <td>${todo.title}</td>
+          <td>${todo.phone}</td>
+          <td>
+            <button class="btn btn-sm btn-primary edit-btn" data-id="${todo._id}">
+              <i class="fas fa-edit"></i>
+            </button>
+            <button class="btn btn-sm btn-danger delete-btn" data-id="${todo._id}">
+              <i class="fas fa-trash"></i>
+            </button>
+            <a href="/${todo._id}/todos" class="btn btn-sm btn-warning">
+              <i class="fa-solid fa-arrow-right-to-bracket"></i>
+            </a>
+          </td>
+        </tr>
+      `).join('');
+
+      renderPagination();
+      updateTableInfo();
+    }
+
+    function renderPagination() {
+      const totalPages = itemsPerPage === 'all' ? 1 : Math.ceil(filteredTodos.length / parseInt(itemsPerPage));
+      const pagination = document.getElementById('pagination');
+      pagination.innerHTML = '';
+
+      if (itemsPerPage !== 'all') {
+        pagination.appendChild(createPaginationItem('«', currentPage > 1, () => changePage(currentPage - 1)));
+
+        for (let i = 1; i <= totalPages; i++) {
+          pagination.appendChild(createPaginationItem(i, true, () => changePage(i), i === currentPage));
+        }
+
+        pagination.appendChild(createPaginationItem('»', currentPage < totalPages, () => changePage(currentPage + 1)));
+      }
+    }
+
+    function createPaginationItem(text, enabled, onClick, isActive = false) {
+      const li = document.createElement('li');
+      li.className = `page-item${isActive ? ' active' : ''}${!enabled ? ' disabled' : ''}`;
+
+      const a = document.createElement('a');
+      a.className = 'page-link';
+      a.href = '#';
+      a.textContent = text;
+
+      if (enabled) {
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          onClick();
+        });
+      }
+
+      li.appendChild(a);
+      return li;
+    }
+
+    function changePage(newPage) {
+      currentPage = newPage;
+      renderTodos();
+    }
+
+    function updateTableInfo() {
+      const startIndex = (currentPage - 1) * (itemsPerPage === 'all' ? filteredTodos.length : parseInt(itemsPerPage)) + 1;
+      const endIndex = itemsPerPage === 'all' ? filteredTodos.length : Math.min(currentPage * parseInt(itemsPerPage), filteredTodos.length);
+      document.getElementById('todoTableInfo').textContent =
+        `Showing ${startIndex} to ${endIndex} of ${filteredTodos.length} entries`;
+    }
+
+    function openModal(todo = null) {
+      const modal = new bootstrap.Modal(document.getElementById('todoModal'));
+      document.getElementById('todoForm').reset();
+      document.getElementById('todoId').value = todo ? todo._id : '';
+      document.getElementById('title').value = todo ? todo.title : '';
+      document.getElementById('phone').value = todo ? todo.phone : '';
+      document.getElementById('todoModalLabel').textContent = todo ? 'Edit Todo' : 'Add New Todo';
+      modal.show();
+    }
+
+    async function saveTodo() {
+      const id = document.getElementById('todoId').value;
+      const title = document.getElementById('title').value;
+      const phone = document.getElementById('phone').value;
+      const todo = { title, phone };
+
+      try {
+        const url = id ? `${API_URL}/${id}` : API_URL;
+        const method = id ? 'PUT' : 'POST';
+        const response = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(todo)
+        });
+
+        if (!response.ok) throw new Error('Failed to save todo');
+        await fetchTodos();
+        bootstrap.Modal.getInstance(document.getElementById('todoModal')).hide();
+      } catch (error) {
+        console.error('Error saving todo:', error);
+        alert('Failed to save todo. Please try again.');
+      }
+    }
+
+    function handleTableClick(e) {
+      const target = e.target.closest('button');
+      if (!target) return;
+
+      const id = target.dataset.id;
+      if (target.classList.contains('edit-btn')) {
+        const todo = todos.find(t => t._id === id);
+        openModal(todo);
+      } else if (target.classList.contains('delete-btn')) {
+        if (confirm('Are you sure you want to delete this todo?')) {
+          deleteTodo(id);
+        }
+      }
+    }
+
+    async function deleteTodo(id) {
+      try {
+        const response = await fetch(`${API_URL}/${id}`, { method: 'DELETE' });
+        if (!response.ok) throw new Error('Failed to delete todo');
+        await fetchTodos();
+      } catch (error) {
+        console.error('Error deleting todo:', error);
+        alert('Failed to delete todo. Please try again.');
+      }
+    }
+
+    function handleSearch(e) {
+      e.preventDefault();
+      const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+      filteredTodos = todos.filter(todo =>
+        todo.title.toLowerCase().includes(searchTerm) ||
+        todo.phone.toLowerCase().includes(searchTerm)
+      );
+      currentPage = 1;
+      renderTodos();
+    }
+
+    function resetSearch() {
+      document.getElementById('searchInput').value = '';
+      filteredTodos = [...todos];
+      currentPage = 1;
+      renderTodos();
+    }
+
+    function handleLimitChange(e) {
+      itemsPerPage = e.target.value;
+      currentPage = 1;
+      renderTodos();
+    }
+  </script>
+</body>
+
+</html>
