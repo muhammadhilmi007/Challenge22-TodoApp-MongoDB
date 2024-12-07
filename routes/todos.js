@@ -23,7 +23,6 @@ module.exports = (db) => {
       if (title) query.title = new RegExp(title, 'i');
       if (complete !== undefined) query.complete = complete === 'true';
 
-      // Tambahkan logika filter tanggal dengan fleksibilitas
       if (startDate || endDate) {
         query.deadline = {};
         if (startDate) query.deadline.$gte = new Date(startDate);
@@ -71,11 +70,13 @@ module.exports = (db) => {
   router.post('/', async (req, res) => {
     try {
       const { title, executor, deadline } = req.body;
+      const deadlineDate = new Date(deadline);
+      deadlineDate.setDate(deadlineDate.getDate() + 1);
       const result = await Todo.insertOne({
         title,
         complete: false,
         executor: new ObjectId(executor),
-        deadline: new Date(deadline)
+        deadline: deadlineDate
       });
       res.status(201).json(result);
     } catch (error) {
@@ -89,12 +90,7 @@ module.exports = (db) => {
       const { id } = req.params;
       const { title, complete, executor, deadline } = req.body;
 
-      let todoId;
-      try {
-        todoId = new ObjectId(id);
-      } catch (idError) {
-        return res.status(400).json({ error: 'Invalid todo ID format' });
-      }
+      const todoId = new ObjectId(id);
 
       const updateData = {
         title,

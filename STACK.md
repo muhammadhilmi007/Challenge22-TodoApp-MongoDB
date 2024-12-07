@@ -227,6 +227,15 @@ Database
 1. MongoDB
 2. Mongoose
 
-
-
-
+=========
+Error
+=========
+1. Sort di Users (selesai)
+2. Ketika Edit User, maka namanya yang di list itu hilang
+3. Reset users
+4. pagination button previous dan next nya hilang ketika sdh di tekan button page 1 nya
+5. datetime + 1 day
+6. alert input baru warna abu abu
+7. error di title todos
+8. refresh page todos error
+9. search todos error

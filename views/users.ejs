@@ -43,8 +43,8 @@
           <thead>
             <tr>
               <th>No</th>
-              <th>Title</th>
-              <th>Phone</th>
+              <th class="sortable" data-sort="title"><i class="fas fa-sort"></i> Name</th>
+              <th class="sortable" data-sort="phone"><i class="fas fa-sort"></i> Phone</th>
               <th>Action</th>
             </tr>
           </thead>
@@ -77,7 +77,7 @@
           <form id="todoForm">
             <input type="hidden" id="todoId">
             <div class="mb-3">
-              <label for="title" class="form-label">Title</label>
+              <label for="title" class="form-label">Name</label>
               <input type="text" class="form-control" id="title" required>
             </div>
             <div class="mb-3">
@@ -94,6 +94,25 @@
     </div>
   </div>
 
+  <!-- Modal for delete confirmation -->
+  <div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Confirm Delete</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          Are you sure you want to delete this todo?
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-danger" id="confirmDelete">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script>
     const API_URL = 'http://localhost:3000/users';
@@ -101,6 +120,10 @@
     let itemsPerPage = 5;
     let todos = [];
     let filteredTodos = [];
+    let currentSort = { field: null, order: 'asc' };
+    let currentSearchTerm = '';
+    let originalTodos = [];
+    let todoToDelete = null;
 
     document.addEventListener('DOMContentLoaded', function () {
       fetchTodos();
@@ -111,6 +134,11 @@
       document.getElementById('searchForm').addEventListener('submit', handleSearch);
       document.getElementById('resetSearch').addEventListener('click', resetSearch);
       document.getElementById('limitSelect').addEventListener('change', handleLimitChange);
+      document.getElementById('confirmDelete').addEventListener('click', confirmDeleteTodo);
+      
+      document.querySelectorAll('.sortable').forEach(th => {
+        th.addEventListener('click', () => handleSort(th.dataset.sort));
+      });
     });
 
     async function fetchTodos() {
@@ -118,8 +146,8 @@
         const response = await fetch(API_URL);
         if (!response.ok) throw new Error('Failed to fetch todos');
         todos = await response.json();
-        filteredTodos = [...todos];
-        renderTodos();
+        originalTodos = JSON.parse(JSON.stringify(todos));
+        applySearch();
       } catch (error) {
         console.error('Error fetching todos:', error);
         alert('Failed to load todos. Please try again.');
@@ -132,13 +160,16 @@
       const currentTodos = filteredTodos.slice(startIndex, endIndex);
 
       const tbody = document.getElementById('todoTableBody');
-      tbody.innerHTML = currentTodos.map((todo, index) => `
-        <tr>
+      tbody.innerHTML = '';
+
+      currentTodos.forEach((todo, index) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
           <td>${startIndex + index + 1}</td>
-          <td>${todo.title}</td>
-          <td>${todo.phone}</td>
+          <td>${highlightSearchTerm(todo.title)}</td>
+          <td>${highlightSearchTerm(todo.phone)}</td>
           <td>
-            <button class="btn btn-sm btn-primary edit-btn" data-id="${todo._id}">
+            <button class="btn btn-sm btn-success edit-btn" data-id="${todo._id}">
               <i class="fas fa-edit"></i>
             </button>
             <button class="btn btn-sm btn-danger delete-btn" data-id="${todo._id}">
@@ -148,11 +179,24 @@
               <i class="fa-solid fa-arrow-right-to-bracket"></i>
             </a>
           </td>
-        </tr>
-      `).join('');
+        `;
+        tbody.appendChild(tr);
+      });
 
       renderPagination();
       updateTableInfo();
+      updateSortIcons();
+    }
+
+    function highlightSearchTerm(text) {
+      if (!currentSearchTerm) return text;
+      const index = text.toLowerCase().indexOf(currentSearchTerm.toLowerCase());
+      if (index >= 0) {
+        return text.substring(0, index) + '<mark>' + 
+               text.substring(index, index + currentSearchTerm.length) + 
+               '</mark>' + text.substring(index + currentSearchTerm.length);
+      }
+      return text;
     }
 
     function renderPagination() {
@@ -161,13 +205,17 @@
       pagination.innerHTML = '';
 
       if (itemsPerPage !== 'all') {
-        pagination.appendChild(createPaginationItem('«', currentPage > 1, () => changePage(currentPage - 1)));
+        if (currentPage > 1) {
+          pagination.appendChild(createPaginationItem('«', true, () => changePage(currentPage - 1)));
+        }
 
         for (let i = 1; i <= totalPages; i++) {
           pagination.appendChild(createPaginationItem(i, true, () => changePage(i), i === currentPage));
         }
 
-        pagination.appendChild(createPaginationItem('»', currentPage < totalPages, () => changePage(currentPage + 1)));
+        if (currentPage < totalPages) {
+          pagination.appendChild(createPaginationItem('»', true, () => changePage(currentPage + 1)));
+        }
       }
     }
 
@@ -246,9 +294,17 @@
         const todo = todos.find(t => t._id === id);
         openModal(todo);
       } else if (target.classList.contains('delete-btn')) {
-        if (confirm('Are you sure you want to delete this todo?')) {
-          deleteTodo(id);
-        }
+        todoToDelete = id;
+        const deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
+        deleteModal.show();
+      }
+    }
+
+    function confirmDeleteTodo() {
+      if (todoToDelete) {
+        deleteTodo(todoToDelete);
+        todoToDelete = null;
+        bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
       }
     }
 
@@ -265,10 +321,14 @@
 
     function handleSearch(e) {
       e.preventDefault();
-      const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+      currentSearchTerm = document.getElementById('searchInput').value.toLowerCase();
+      applySearch();
+    }
+
+    function applySearch() {
       filteredTodos = todos.filter(todo =>
-        todo.title.toLowerCase().includes(searchTerm) ||
-        todo.phone.toLowerCase().includes(searchTerm)
+        todo.title.toLowerCase().includes(currentSearchTerm) ||
+        todo.phone.toLowerCase().includes(currentSearchTerm)
       );
       currentPage = 1;
       renderTodos();
@@ -276,15 +336,44 @@
 
     function resetSearch() {
       document.getElementById('searchInput').value = '';
-      filteredTodos = [...todos];
-      currentPage = 1;
-      renderTodos();
+      currentSearchTerm = '';
+      todos = JSON.parse(JSON.stringify(originalTodos));
+      currentSort = { field: null, order: 'asc' };
+      applySearch();
     }
 
     function handleLimitChange(e) {
       itemsPerPage = e.target.value;
       currentPage = 1;
       renderTodos();
+    }
+
+    function handleSort(field) {
+      if (currentSort.field === field) {
+        currentSort.order = currentSort.order === 'asc' ? 'desc' : 'asc';
+      } else {
+        currentSort.field = field;
+        currentSort.order = 'asc';
+      }
+      
+      filteredTodos.sort((a, b) => {
+        if (a[field] < b[field]) return currentSort.order === 'asc' ? -1 : 1;
+        if (a[field] > b[field]) return currentSort.order === 'asc' ? 1 : -1;
+        return 0;
+      });
+      
+      renderTodos();
+    }
+
+    function updateSortIcons() {
+      document.querySelectorAll('.sortable').forEach(th => {
+        const icon = th.querySelector('i');
+        if (th.dataset.sort === currentSort.field) {
+          icon.className = `fas fa-sort-${currentSort.order === 'asc' ? 'up' : 'down'}`;
+        } else {
+          icon.className = 'fas fa-sort';
+        }
+      });
     }
   </script>
 </body>

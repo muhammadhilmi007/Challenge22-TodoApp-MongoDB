@@ -15,7 +15,7 @@
     <div class="container mt-5">
         <div class="card">
             <div class="card-header text-center">
-                <h1>MongoDB Todos(Browse, Read, Edit, Add, Delete, Sort)</h1>
+                <h1>Todo List</h1>
             </div>
             <div class="card-body">
                 <form id="searchForm">
@@ -27,13 +27,13 @@
                         </div>
                     </div>
                     <div class="row mb-3">
-                        <label for="startDate" class="col-sm-2 col-form-label">Start Date</label>
+                        <label for="startDate" class="col-sm-2 col-form-label">Deadline</label>
                         <div class="col-sm-4">
-                            <input type="date" class="form-control" id="startDate">
+                            <input type="datetime-local" class="form-control" id="startDate">
                         </div>
                         <label for="endDate" class="col-sm-2 col-form-label text-center">s.d</label>
                         <div class="col-sm-4">
-                            <input type="date" class="form-control" id="endDate">
+                            <input type="datetime-local" class="form-control" id="endDate">
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -49,7 +49,7 @@
                     <div class="row mb-3">
                         <button class="btn btn-success mb-3 col-sm-2" id="sortBtn"
                             style="margin-left: 10px; margin-right: 10px">
-                            <i class="fas fa-sort"></i> Sort by Deadline
+                            <i class="fas fa-sort" id="sortIcon"></i> Sort by Deadline
                         </button>
                         <div class="col-sm-8">
                             <button type="button" class="btn btn-warning" id="resetBtn"><i
@@ -143,14 +143,15 @@
         let currentUserId = params.userid;
         let isLoading = false;
         let hasMoreData = true;
+        let currentFilter = {};
 
         function renderTodos() {
             const todoList = $('#todoList');
             todoList.empty();
             todos.forEach(todo => {
-                const deadlineDate = moment(todo.deadline);
+                const deadlineDate = moment(todo.deadline).locale('id');
                 const isPastDeadline = deadlineDate.isBefore(moment());
-                const alertClass = todo.complete ? 'alert-success' : (isPastDeadline ? 'alert-danger' : 'alert-info');
+                const alertClass = todo.complete ? 'alert-success' : (isPastDeadline ? 'alert-danger' : 'alert-secondary');
                 const todoHtml = `
                     <div class="alert ${alertClass}" role="alert">
                         ${deadlineDate.format('DD-MM-YYYY HH:mm')} ${todo.title}
@@ -176,6 +177,7 @@
             }
 
             const queryParams = {
+                ...currentFilter,
                 page: currentPage,
                 limit: itemsPerPage,
                 sortBy: sortBy,
@@ -216,37 +218,19 @@
             const endDate = $('#endDate').val();
             const status = $('#statusSelect').val();
 
-            const queryParams = {
-                page: 1,
-                limit: itemsPerPage,
-                sortBy: sortBy,
-                sortOrder: sortOrder,
-                executor: currentUserId
-            };
+            currentFilter = {};
+            if (searchQuery) currentFilter.title = searchQuery;
+            if (status !== '') currentFilter.complete = status === 'true';
+            if (startDate) {
+                const startDateTime = moment(startDate).locale('id');
+                currentFilter.startDate = startDateTime.toISOString();
+            }
+            if (endDate) {
+                const endDateTime = moment(endDate).locale('id');
+                currentFilter.endDate = endDateTime.toISOString();
+            }
 
-            if (searchQuery) queryParams.title = searchQuery;
-            if (status !== '') queryParams.complete = status === 'true';
-            if (startDate) queryParams.startDate = startDate;
-            if (endDate) queryParams.endDate = endDate;
-
-            $.ajax({
-                url: `${API_URL}/todos`,
-                method: 'GET',
-                data: queryParams,
-                beforeSend: function () {
-                    $('#todoList').html('<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>');
-                },
-                success: function (data) {
-                    todos = data.data && Array.isArray(data.data) ? data.data : [];
-                    currentPage = 2;
-                    hasMoreData = todos.length >= itemsPerPage;
-                    renderTodos();
-                },
-                error: function (err) {
-                    console.error('Error searching todos:', err);
-                    $('#todoList').html('<div class="alert alert-danger">Error searching todos. Please try again.</div>');
-                }
-            });
+            fetchTodos(true);
         });
 
         $('#resetBtn').click(function (e) {
@@ -254,11 +238,33 @@
             $('#searchForm')[0].reset();
             sortBy = '_id';
             sortOrder = 'desc';
+            currentFilter = {};
             fetchTodos(true);
         });
 
+        function updateSortIcon() {
+            const sortIcon = $('#sortIcon');
+            sortIcon.removeClass('fa-sort-up fa-sort-down fa-sort');
+            if (sortOrder === 'asc') {
+                sortIcon.addClass('fa-sort-up');
+            } else if (sortOrder === 'desc') {
+                sortIcon.addClass('fa-sort-down');
+            } else {
+                sortIcon.addClass('fa-sort');
+            }
+        }
+
         $('#sortBtn').click(function () {
-            sortOrder = sortOrder === 'asc' ? 'desc' : 'asc';
+            if (sortOrder === 'asc') {
+                sortOrder = 'desc';
+            } else if (sortOrder === 'desc') {
+                sortOrder = '';
+                sortBy = '_id';
+            } else {
+                sortOrder = 'asc';
+                sortBy = 'deadline';
+            }
+            updateSortIcon();
             fetchTodos(true);
         });
 
@@ -333,25 +339,14 @@
                 data: JSON.stringify(updatedTodo),
                 success: function (updatedTodo) {
                     bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
-                    showToast('Todo updated successfully', 'success');
                     fetchTodos(true);
                 },
                 error: function (error) {
                     console.log('Error updating todo:', error.responseJSON);
-                    showToast('Failed to update todo. Please try again.', 'error');
+                    alert('Failed to update todo. Please try again.');
                 }
             });
         });
-
-        function showToast(message, type) {
-            const toast = $(`<div class="toast" role="alert" aria-live="assertive" aria-atomic="true">
-                <div class="toast-body ${type === 'error' ? 'bg-danger text-white' : 'bg-success text-white'}">
-                    ${message}
-                </div>
-            </div>`);
-            $('.toast-container').append(toast);
-            toast.toast({ delay: 3000 }).toast('show');
-        }
 
         $(document).on('click', '.delete-btn', function () {
             const id = $(this).data('id');
