@@ -20,32 +20,77 @@ module.exports = (db) => {
       } = req.query;
 
       const query = {};
+      
+      // Simple title filtering without regex
       if (title) {
-        query.title = (todo) => todo.title.toLowerCase().includes(title.toLowerCase());
+        query.title = (todo) => 
+          todo.title.toLowerCase().includes(title.toLowerCase());
       }
-      if (complete !== undefined) query.complete = complete === 'true';
+
+      if (complete !== undefined) {
+        query.complete = complete === 'true';
+      }
 
       if (startDate || endDate) {
-        query.deadline = {};
-        if (startDate) query.deadline.$gte = new Date(startDate);
-        if (endDate) query.deadline.$lte = new Date(endDate);
+        const start = startDate ? new Date(startDate) : null;
+        const end = endDate ? new Date(endDate) : null;
+
+        query.dateFilter = (todo) => {
+          const todoDate = new Date(todo.deadline);
+          if (start && end) {
+            return todoDate >= start && todoDate <= end;
+          }
+          if (start) {
+            return todoDate >= start;
+          }
+          if (end) {
+            return todoDate <= end;
+          }
+          return true;
+        };
       }
 
-      if (executor) query.executor = new ObjectId(executor);
+      if (executor) {
+        query.executor = new ObjectId(executor);
+      }
 
-      const totalItems = await Todo.countDocuments(query);
-      const totalPages = Math.ceil(totalItems / limit);
+      // Fetch all todos first
+      let todos = await Todo.find({}).toArray();
 
-      const todos = await Todo.find(query)
-        .sort({ [sortBy]: sortOrder === 'desc' ? -1 : 1 })
-        .skip((page - 1) * limit)
-        .limit(Number(limit))
-        .toArray();
+      // Apply filters
+      let filteredTodos = todos.filter(todo => {
+        // Check title
+        if (query.title && !query.title(todo)) return false;
+        
+        // Check completion status
+        if (query.complete !== undefined && todo.complete !== query.complete) return false;
+        
+        // Check date
+        if (query.dateFilter && !query.dateFilter(todo)) return false;
+        
+        // Check executor
+        if (query.executor && !todo.executor.equals(query.executor)) return false;
+        
+        return true;
+      });
+
+      // Sort todos
+      filteredTodos.sort((a, b) => {
+        const sortMultiplier = sortOrder === 'desc' ? -1 : 1;
+        if (a[sortBy] < b[sortBy]) return -1 * sortMultiplier;
+        if (a[sortBy] > b[sortBy]) return 1 * sortMultiplier;
+        return 0;
+      });
+
+      // Pagination
+      const startIndex = (page - 1) * limit;
+      const endIndex = startIndex + Number(limit);
+      const paginatedTodos = filteredTodos.slice(startIndex, endIndex);
 
       res.json({
-        data: todos,
-        total: totalItems,
-        pages: totalPages,
+        data: paginatedTodos,
+        total: filteredTodos.length,
+        pages: Math.ceil(filteredTodos.length / limit),
         page: Number(page),
         limit: Number(limit)
       });

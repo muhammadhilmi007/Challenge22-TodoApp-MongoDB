@@ -138,7 +138,7 @@
         let todos = [];
         let currentPage = 1;
         let itemsPerPage = 10;
-        let sortBy = '_id';
+        let sortBy = 'deadline';
         let sortOrder = 'desc';
         let currentUserId = params.userid;
         let isLoading = false;
@@ -236,9 +236,10 @@
         $('#resetBtn').click(function (e) {
             e.preventDefault();
             $('#searchForm')[0].reset();
-            sortBy = '_id';
-            sortOrder = 'desc';
+            sortBy = 'deadline';
+            sortOrder = 'asc';
             currentFilter = {};
+            updateSortIcon();
             fetchTodos(true);
         });
 
@@ -257,13 +258,10 @@
         $('#sortBtn').click(function () {
             if (sortOrder === 'asc') {
                 sortOrder = 'desc';
-            } else if (sortOrder === 'desc') {
-                sortOrder = '';
-                sortBy = '_id';
             } else {
                 sortOrder = 'asc';
-                sortBy = 'deadline';
             }
+            sortBy = 'deadline';
             updateSortIcon();
             fetchTodos(true);
         });
@@ -376,6 +374,7 @@
         });
 
         fetchTodos(true);
+        updateSortIcon();
     </script>
 </body>
 
