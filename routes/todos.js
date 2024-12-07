@@ -21,7 +21,6 @@ module.exports = (db) => {
 
       const query = {};
       
-      // Simple title filtering without regex
       if (title) {
         query.title = (todo) => 
           todo.title.toLowerCase().includes(title.toLowerCase());
