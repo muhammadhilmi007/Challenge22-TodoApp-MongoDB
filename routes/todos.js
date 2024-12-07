@@ -20,7 +20,9 @@ module.exports = (db) => {
       } = req.query;
 
       const query = {};
-      if (title) query.title = new RegExp(title, 'i');
+      if (title) {
+        query.title = (todo) => todo.title.toLowerCase().includes(title.toLowerCase());
+      }
       if (complete !== undefined) query.complete = complete === 'true';
 
       if (startDate || endDate) {
